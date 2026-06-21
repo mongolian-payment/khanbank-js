@@ -1,6 +1,16 @@
 # @mongolian-payment/khanbank
 
-Khan Bank payment SDK for Node.js. Register payment orders and check their status using the Khan Bank e-commerce gateway.
+Khan Bank e-commerce payment SDK for Node.js — register payment orders and check their status.
+
+[![npm version](https://img.shields.io/npm/v/@mongolian-payment/khanbank.svg)](https://www.npmjs.com/package/@mongolian-payment/khanbank)
+[![license](https://img.shields.io/npm/l/@mongolian-payment/khanbank.svg)](./LICENSE)
+
+> Part of the **[mongolian-payment](https://github.com/mongolian-payment)** SDK suite.
+> Also available for Python: **[mongolian-payment-khanbank](https://pypi.org/project/mongolian-payment-khanbank/)** ([source](https://github.com/mongolian-payment/khanbank-py)).
+
+## Requirements
+
+- Node.js >= 18.0.0 (uses native `fetch`)
 
 ## Installation
 
@@ -11,127 +21,94 @@ npm install @mongolian-payment/khanbank
 ## Quick Start
 
 ```typescript
-import { KhanBankClient } from '@mongolian-payment/khanbank';
+import { KhanBankClient } from "@mongolian-payment/khanbank";
 
 const client = new KhanBankClient({
-  endpoint: 'https://epg.khanbank.com/payment/rest',
-  username: 'your-username',
-  password: 'your-password',
-  language: 'mn', // optional, defaults to 'mn'
+  endpoint: "https://epg.khanbank.com/payment/rest",
+  username: "YOUR_USERNAME",
+  password: "YOUR_PASSWORD",
+  language: "mn", // optional, "mn" (default) or "en"
 });
 
 // Register a new order
 const order = await client.registerOrder({
-  orderNumber: 'ORDER-001',
+  orderNumber: "ORDER-001",
   amount: 50000,
-  successCallback: 'https://yoursite.com/payment/success',
-  failCallback: 'https://yoursite.com/payment/fail',
+  successCallback: "https://yourapp.com/payment/success",
+  failCallback: "https://yourapp.com/payment/fail",
 });
 
-console.log(order.orderId);  // Bank-assigned order ID
-console.log(order.formUrl);  // Redirect user here for payment
+console.log(order.orderId); // Bank-assigned order ID
+console.log(order.formUrl); // Redirect the user here for payment
 
 // Check order status
 const status = await client.checkOrder(order.orderId);
-
 if (status.success) {
-  console.log('Payment successful!');
+  console.log("Payment successful!");
 } else {
-  console.log(`Payment failed: ${status.errorMessage}`);
+  console.log(`Payment not completed: ${status.errorMessage}`);
 }
 ```
 
-## Configuration
-
-### Direct Configuration
+## Configuration from Environment Variables
 
 ```typescript
-const client = new KhanBankClient({
-  endpoint: 'https://epg.khanbank.com/payment/rest',
-  username: 'your-username',
-  password: 'your-password',
-  language: 'en', // 'mn' (Mongolian) or 'en' (English)
-});
+import { KhanBankClient, loadConfigFromEnv } from "@mongolian-payment/khanbank";
+
+const client = new KhanBankClient(loadConfigFromEnv());
 ```
 
-### Environment Variables
+| Variable             | Description                                  |
+| -------------------- | -------------------------------------------- |
+| `KHANBANK_ENDPOINT`  | Khan Bank API base URL                       |
+| `KHANBANK_USERNAME`  | API username                                 |
+| `KHANBANK_PASSWORD`  | API password                                 |
+| `KHANBANK_LANGUAGE`  | Language code, `mn` or `en` (optional, `mn`) |
 
-```typescript
-import { loadConfigFromEnv } from '@mongolian-payment/khanbank';
-
-// Reads from:
-//   KHANBANK_ENDPOINT (required)
-//   KHANBANK_USERNAME (required)
-//   KHANBANK_PASSWORD (required)
-//   KHANBANK_LANGUAGE (optional, defaults to 'mn')
-const config = loadConfigFromEnv();
-const client = new KhanBankClient(config);
-```
+> Never hard-code credentials — load them from the environment or a secrets vault.
 
 ## API Reference
 
-### `new KhanBankClient(config)`
+Credentials are sent in the request body with every call.
 
-Create a new client instance.
+| Method | Description |
+|--------|-------------|
+| `registerOrder(input)` | Register a payment order → `{ orderId, formUrl }` |
+| `checkOrder(orderId)` | Check order status → `{ success, errorCode, errorMessage, orderNumber, ip }` |
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `endpoint` | `string` | Yes | Khan Bank API base URL |
-| `username` | `string` | Yes | API username |
-| `password` | `string` | Yes | API password |
-| `language` | `string` | No | Language code (`'mn'` or `'en'`, defaults to `'mn'`) |
+```typescript
+// registerOrder takes the merchant order number, amount, and callback URLs.
+// The amount is sent with fixed 2 decimal places (e.g. 50000 -> "50000.00").
+const order = await client.registerOrder({
+  orderNumber: "ORDER-001",
+  amount: 50000,
+  successCallback: "https://yourapp.com/payment/success",
+  failCallback: "https://yourapp.com/payment/fail",
+});
 
-### `client.registerOrder(input)`
-
-Register a new payment order.
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `orderNumber` | `string` | Your merchant order number |
-| `amount` | `number` | Payment amount (formatted as fixed 2 decimal places) |
-| `successCallback` | `string` | URL to redirect on successful payment |
-| `failCallback` | `string` | URL to redirect on failed payment |
-
-Returns `Promise<RegisterOrderResponse>`:
-- `orderId` - Bank-assigned order ID
-- `formUrl` - Payment form URL (redirect the user here)
-
-### `client.checkOrder(orderId)`
-
-Check the status of an existing order.
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `orderId` | `string` | The bank-assigned order ID |
-
-Returns `Promise<OrderStatusResponse>`:
-- `success` - `true` if the payment was successful
-- `errorCode` - Error code from the bank
-- `errorMessage` - Error message from the bank
-- `orderNumber` - Your merchant order number
-- `ip` - IP address of the payer
+const status = await client.checkOrder(order.orderId);
+console.log(status.success);      // true when the payment is completed
+console.log(status.orderNumber);  // your merchant order number
+console.log(status.ip);           // IP address of the payer
+```
 
 ## Error Handling
 
-All API errors throw a `KhanBankError`:
+All API errors throw `KhanBankError`, which includes the HTTP status code and response body:
 
 ```typescript
-import { KhanBankClient, KhanBankError } from '@mongolian-payment/khanbank';
+import { KhanBankError } from "@mongolian-payment/khanbank";
 
 try {
-  const order = await client.registerOrder({ ... });
+  await client.checkOrder("invalid_id");
 } catch (err) {
   if (err instanceof KhanBankError) {
-    console.error(err.message);     // Error description
-    console.error(err.statusCode);  // HTTP status code
-    console.error(err.response);    // Raw API response
+    console.error(err.message);    // Human-readable message
+    console.error(err.statusCode); // HTTP status code
+    console.error(err.response);   // Raw response body
   }
 }
 ```
-
-## Requirements
-
-- Node.js >= 18.0.0 (uses native `fetch`)
 
 ## License
 
